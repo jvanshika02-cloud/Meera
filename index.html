@@ -674,119 +674,80 @@ footer{background:var(--ink);color:rgba(247,241,227,.6);padding:40px 24px;text-a
     <div class="p-sidebar">
       <p style="font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-deep);margin-bottom:20px;font-weight:700">✦ Plan Your Yatra</p>
 
-      <div class="p-progress" id="pProgress">
-        <div class="p-dot current" data-dot="0"></div>
-        <div class="p-dot" data-dot="1"></div>
-        <div class="p-dot" data-dot="2"></div>
-        <div class="p-dot" data-dot="3"></div>
-        <div class="p-dot" data-dot="4"></div>
-      </div>
-
       <!-- Q1: Where -->
-      <div class="p-step-wrap active" id="pStep0">
-        <div class="p-q">
-          <div class="p-qlabel">Where do you want to go?</div>
-          <div id="destCards"></div>
-          <div id="destInputWrap">
-            <input class="inp" id="destInput" placeholder="Search temples, deities, cities…" oninput="showDestDD(this.value)" autocomplete="off">
-          </div>
-          <div id="destDD" style="display:none" class="dest-dd"></div>
-          <button type="button" id="addAnotherBtn" onclick="toggleAddAnother()" style="display:none;background:none;border:none;padding:8px 0 2px;font-family:system-ui,sans-serif;font-size:13px;color:var(--gold-deep);cursor:pointer;font-weight:600">＋ Add another temple</button>
+      <div class="p-q">
+        <div class="p-qlabel">Where do you want to go?</div>
+        <div id="destCards"></div>
+        <div id="destInputWrap">
+          <input class="inp" id="destInput" placeholder="Search temples, deities, cities…" oninput="showDestDD(this.value)" autocomplete="off">
         </div>
-        <div class="p-navrow">
-          <button class="p-next-btn" id="pNext0" onclick="goToPStep(1)" disabled>Next →</button>
-        </div>
+        <div id="destDD" style="display:none" class="dest-dd"></div>
+        <button type="button" id="addAnotherBtn" onclick="toggleAddAnother()" style="display:none;background:none;border:none;padding:8px 0 2px;font-family:system-ui,sans-serif;font-size:13px;color:var(--gold-deep);cursor:pointer;font-weight:600">＋ Add another temple</button>
       </div>
 
       <!-- Q2: Who -->
-      <div class="p-step-wrap" id="pStep1">
-        <div class="p-summary-row" id="pSum1"></div>
-        <div class="p-q">
-          <div class="p-qlabel">Who's travelling?</div>
-          <div class="p-pills" id="groupPills">
-            <button class="p-pill" onclick="selectPill(this,'groupPills',1)">Solo</button>
-            <button class="p-pill active" onclick="selectPill(this,'groupPills',1)">Couple</button>
-            <button class="p-pill" onclick="selectPill(this,'groupPills',1)">Family</button>
-            <button class="p-pill" onclick="selectPill(this,'groupPills',1)">With seniors</button>
-            <button class="p-pill" onclick="selectPill(this,'groupPills',1)">Group</button>
-          </div>
-        </div>
-        <div class="p-navrow">
-          <button class="p-back-btn" onclick="goToPStep(0)">← Back</button>
-          <button class="p-next-btn" onclick="goToPStep(2)">Next →</button>
+      <div class="p-q">
+        <div class="p-qlabel">Who's travelling?</div>
+        <div class="p-pills" id="groupPills">
+          <button class="p-pill" onclick="selectPill(this,'groupPills')">Solo</button>
+          <button class="p-pill active" onclick="selectPill(this,'groupPills')">Couple</button>
+          <button class="p-pill" onclick="selectPill(this,'groupPills')">Family</button>
+          <button class="p-pill" onclick="selectPill(this,'groupPills')">With seniors</button>
+          <button class="p-pill" onclick="selectPill(this,'groupPills')">Group</button>
         </div>
       </div>
 
       <!-- Q3: Duration -->
-      <div class="p-step-wrap" id="pStep2">
-        <div class="p-summary-row" id="pSum2"></div>
-        <div class="p-q">
-          <div class="p-qlabel">How many days?</div>
-          <div class="p-pills" id="daysPills">
-            <button class="p-pill" onclick="selectPill(this,'daysPills',2)">1 day</button>
-            <button class="p-pill" onclick="selectPill(this,'daysPills',2)">2–3 days</button>
-            <button class="p-pill active" onclick="selectPill(this,'daysPills',2)">4–5 days</button>
-            <button class="p-pill" onclick="selectPill(this,'daysPills',2)">7 days</button>
-            <button class="p-pill" onclick="selectPill(this,'daysPills',2)">10+ days</button>
-          </div>
-        </div>
-        <div class="p-navrow">
-          <button class="p-back-btn" onclick="goToPStep(1)">← Back</button>
-          <button class="p-next-btn" onclick="goToPStep(3)">Next →</button>
+      <div class="p-q">
+        <div class="p-qlabel">How many days?</div>
+        <div class="p-pills" id="daysPills">
+          <button class="p-pill" onclick="selectPill(this,'daysPills')">1 day</button>
+          <button class="p-pill" onclick="selectPill(this,'daysPills')">2–3 days</button>
+          <button class="p-pill active" onclick="selectPill(this,'daysPills')">4–5 days</button>
+          <button class="p-pill" onclick="selectPill(this,'daysPills')">7 days</button>
+          <button class="p-pill" onclick="selectPill(this,'daysPills')">10+ days</button>
         </div>
       </div>
 
       <!-- Q4: Budget -->
-      <div class="p-step-wrap" id="pStep3">
-        <div class="p-summary-row" id="pSum3"></div>
-        <div class="p-q">
-          <div class="p-qlabel">Your budget?</div>
-          <div class="budget-cards">
-            <div class="budget-card" id="bc-budget" onclick="selectBudget('budget',3)">
-              <div class="budget-card-icon">🙏</div>
-              <div class="budget-card-name">Simple</div>
-              <div class="budget-card-desc">Dharamshalas & sleeper trains</div>
-            </div>
-            <div class="budget-card active" id="bc-mid" onclick="selectBudget('mid',3)">
-              <div class="budget-card-icon">⭐</div>
-              <div class="budget-card-name">Comfortable</div>
-              <div class="budget-card-desc">3★ hotels & AC trains</div>
-            </div>
-            <div class="budget-card" id="bc-premium" onclick="selectBudget('premium',3)">
-              <div class="budget-card-icon">✨</div>
-              <div class="budget-card-name">Premium</div>
-              <div class="budget-card-desc">Good hotels & flights</div>
-            </div>
+      <div class="p-q">
+        <div class="p-qlabel">Your budget?</div>
+        <div class="budget-cards">
+          <div class="budget-card" id="bc-budget" onclick="selectBudget('budget')">
+            <div class="budget-card-icon">🙏</div>
+            <div class="budget-card-name">Simple</div>
+            <div class="budget-card-desc">Dharamshalas & sleeper trains</div>
           </div>
-        </div>
-        <div class="p-navrow">
-          <button class="p-back-btn" onclick="goToPStep(2)">← Back</button>
-          <button class="p-next-btn" onclick="goToPStep(4)">Next →</button>
+          <div class="budget-card active" id="bc-mid" onclick="selectBudget('mid')">
+            <div class="budget-card-icon">⭐</div>
+            <div class="budget-card-name">Comfortable</div>
+            <div class="budget-card-desc">3★ hotels & AC trains</div>
+          </div>
+          <div class="budget-card" id="bc-premium" onclick="selectBudget('premium')">
+            <div class="budget-card-icon">✨</div>
+            <div class="budget-card-name">Premium</div>
+            <div class="budget-card-desc">Good hotels & flights</div>
+          </div>
         </div>
       </div>
 
       <!-- Q5: From -->
-      <div class="p-step-wrap" id="pStep4">
-        <div class="p-summary-row" id="pSum4"></div>
-        <div class="p-q" style="margin-bottom:4px">
-          <div class="p-qlabel">Travelling from</div>
-          <select class="inp" id="fromCity" style="font-family:system-ui,sans-serif;cursor:pointer;font-size:14px">
-            <option value="">Select your city…</option>
-            <option value="Delhi">Delhi / NCR</option>
-            <option value="Mumbai">Mumbai / Pune</option>
-            <option value="Bangalore">Bangalore</option>
-            <option value="Chennai">Chennai</option>
-            <option value="Kolkata">Kolkata</option>
-            <option value="Hyderabad">Hyderabad</option>
-            <option value="Ahmedabad">Ahmedabad / Gujarat</option>
-            <option value="Other">Other city</option>
-          </select>
-        </div>
-        <div class="p-navrow" style="margin-bottom:10px">
-          <button class="p-back-btn" onclick="goToPStep(3)">← Back</button>
-        </div>
-        <button class="gen-btn" id="genBtn" onclick="generateItinerary()">Plan My Yatra ✦</button>
+      <div class="p-q" style="margin-bottom:4px">
+        <div class="p-qlabel">Travelling from</div>
+        <select class="inp" id="fromCity" style="font-family:system-ui,sans-serif;cursor:pointer;font-size:14px">
+          <option value="">Select your city…</option>
+          <option value="Delhi">Delhi / NCR</option>
+          <option value="Mumbai">Mumbai / Pune</option>
+          <option value="Bangalore">Bangalore</option>
+          <option value="Chennai">Chennai</option>
+          <option value="Kolkata">Kolkata</option>
+          <option value="Hyderabad">Hyderabad</option>
+          <option value="Ahmedabad">Ahmedabad / Gujarat</option>
+          <option value="Other">Other city</option>
+        </select>
       </div>
+
+      <button class="gen-btn" id="genBtn" onclick="generateItinerary()">Plan My Yatra ✦</button>
     </div>
 
     <!-- main -->
@@ -794,7 +755,7 @@ footer{background:var(--ink);color:rgba(247,241,227,.6);padding:40px 24px;text-a
       <div class="p-card" style="text-align:center;padding:48px 28px">
         <div style="margin-bottom:16px;opacity:.35"><svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" width="56" height="56"><circle cx="40" cy="9" r="5" fill="var(--ink-soft)"/><line x1="40" y1="14" x2="40" y2="20" stroke="var(--ink-soft)" stroke-width="2"/><path d="M40 20 L26 46 L24 70 L56 70 L54 46 Z" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-linejoin="round"/><rect x="20" y="68" width="40" height="5" rx="1" fill="var(--ink-soft)"/></svg></div>
         <h2 style="font-size:22px;font-weight:normal;margin-bottom:8px">Your yatra plan will appear here</h2>
-        <p style="font-family:system-ui,sans-serif;font-size:14px;color:var(--ink-soft)">Work through the 5 quick steps on the left, then tap "Plan My Yatra" to get started.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:14px;color:var(--ink-soft)">Pick a destination, answer 4 quick questions, and tap "Plan My Yatra" to get started.</p>
       </div>
     </div>
   </div>
@@ -1443,6 +1404,8 @@ function addToItinerary(){
   } else {
     showToast('Already in your Yatra plan.');
   }
+  const nextBtn = document.getElementById('pNext0');
+  if(nextBtn) nextBtn.disabled = selectedDests.length===0;
   closeModal();
   setTimeout(()=>showPage('planner'),400);
 }
