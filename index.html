@@ -626,6 +626,10 @@ footer{background:var(--ink);color:rgba(247,241,227,.6);padding:40px 24px;text-a
     <div class="mcard">
       <label class="inp-lbl">Select Travel Date</label>
       <input type="date" class="m-date-input" id="muhuratDate" onchange="computePanchang(this.value)">
+      <label class="inp-lbl" style="margin-top:14px">Location (for real sunrise/sunset times)</label>
+      <select class="m-date-input" id="muhuratCity" onchange="computePanchang(document.getElementById('muhuratDate').value); renderMiniCal();">
+        <option>Delhi</option><option>Mumbai</option><option>Bangalore</option><option>Chennai</option><option>Kolkata</option><option>Hyderabad</option><option>Ahmedabad</option>
+      </select>
       <div class="panchang-grid" id="panchangGrid" style="display:none"></div>
     </div>
 
@@ -783,6 +787,9 @@ footer{background:var(--ink);color:rgba(247,241,227,.6);padding:40px 24px;text-a
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
+
+<!-- Real astronomy engine for panchang calculation (Sun/Moon positions, sunrise/sunset) — pure JS, no backend needed -->
+<script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2/astronomy.browser.min.js"></script>
 
 <script>
 // ═══════════════════════════════════════════
@@ -1417,22 +1424,81 @@ const TITHIS=['Pratipada','Dwitiya','Tritiya','Chaturthi','Panchami','Shashthi',
 const NAKSHATRAS=['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punarvasu','Pushya','Ashlesha','Magha','Purva Phalguni','Uttara Phalguni','Hasta','Chitra','Swati','Vishakha','Anuradha','Jyeshtha','Mula','Purva Ashadha','Uttara Ashadha','Shravana','Dhanishtha','Shatabhisha','Purva Bhadrapada','Uttara Bhadrapada','Revati'];
 const YOGAS=['Vishkambha','Priti','Ayushman','Saubhagya','Shobhana','Atiganda','Sukarma','Dhriti','Shula','Ganda','Vriddhi','Dhruva','Vyaghata','Harshana','Vajra','Siddhi','Vyatipata','Variyana','Parigha','Shiva','Siddha','Sadhya','Shubha','Shukla','Brahma','Indra','Vaidhriti'];
 const VAARS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const RAHU_KAAL={0:['4:30 PM','6:00 PM'],1:['7:30 AM','9:00 AM'],2:['3:00 PM','4:30 PM'],3:['12:00 PM','1:30 PM'],4:['1:30 PM','3:00 PM'],5:['10:30 AM','12:00 PM'],6:['9:00 AM','10:30 AM']};
-const PUJA_TIME={0:['6:00 AM – 7:00 AM','11:30 AM – 12:30 PM'],1:['5:30 AM – 7:00 AM','4:30 PM – 6:00 PM'],2:['6:00 AM – 7:30 AM','3:00 PM – 4:00 PM'],3:['6:30 AM – 8:00 AM','5:00 PM – 6:30 PM'],4:['5:30 AM – 6:30 AM','1:30 PM – 3:00 PM'],5:['6:00 AM – 7:30 AM','2:30 PM – 4:00 PM'],6:['7:00 AM – 8:30 AM','11:30 AM – 1:00 PM']};
+// ═══════════════════════════════════════════
+// REAL PANCHANG ENGINE
+// Computes actual Sun/Moon positions via astronomy-engine (loaded above from CDN)
+// instead of a fake seeded placeholder. Ayanamsa = Lahiri (approx, standard precession rate).
+// ═══════════════════════════════════════════
+const PANCHANG_CITIES = {
+  'Delhi':{lat:28.6139,lon:77.2090}, 'Mumbai':{lat:19.0760,lon:72.8777},
+  'Bangalore':{lat:12.9716,lon:77.5946}, 'Chennai':{lat:13.0827,lon:80.2707},
+  'Kolkata':{lat:22.5726,lon:88.3639}, 'Hyderabad':{lat:17.3850,lon:78.4867},
+  'Ahmedabad':{lat:23.0225,lon:72.5714}
+};
+const RAHU_SEGMENT=[8,2,7,5,6,4,3]; // segment (of 8, sunrise→sunset) assigned to Rahu Kaal by weekday (Sun..Sat) — standard convention
 
-function dateSeed(d){ let [y,m,day]=d.split('-').map(Number); return y*10000+m*100+day; }
+function normDeg(x){ x = x%360; return x<0 ? x+360 : x; }
 
-function computePanchang(dateStr){
-  if(!dateStr) return;
-  const d = new Date(dateStr);
-  const dow = d.getDay();
-  const seed = dateSeed(dateStr);
-  const tithi = TITHIS[seed%15];
-  const nakshatra = NAKSHATRAS[seed%27];
-  const yoga = YOGAS[seed%27];
-  const vaar = VAARS[dow];
+function lahiriAyanamsa(date){
+  // Standard precession rate (~50.29"/yr) from the J2000 Lahiri epoch value of 23.85°.
+  const years = Astronomy.MakeTime(date).tt / 365.25;
+  return 23.85 + years*0.013972;
+}
 
-  // quality
+function realPanchangFor(dateStr, cityName){
+  const city = PANCHANG_CITIES[cityName] || PANCHANG_CITIES['Delhi'];
+  const observer = new Astronomy.Observer(city.lat, city.lon, 0);
+  const noonAnchor = new Date(dateStr+'T12:00:00Z'); // safe midday anchor so IST date doesn't shift
+  const localDow = noonAnchor.getUTCDay();
+
+  let sunrise, sunset;
+  try{
+    sunrise = Astronomy.SearchRiseSet(Astronomy.Body.Sun, observer, 1, new Date(dateStr+'T00:00:00Z'), 2).date;
+    sunset = Astronomy.SearchRiseSet(Astronomy.Body.Sun, observer, -1, sunrise, 1).date;
+  } catch(e){
+    sunrise = new Date(dateStr+'T00:30:00Z'); sunset = new Date(dateStr+'T13:30:00Z'); // fallback ~ IST default
+  }
+
+  // Tithi: real Sun-Moon elongation at sunrise (paksha-independent, no ayanamsa needed)
+  const elong = Astronomy.MoonPhase(sunrise);
+  const tithiNum = Math.floor(elong/12)+1; // 1..30
+  const paksha = tithiNum<=15 ? 'Shukla Paksha' : 'Krishna Paksha';
+  const tithiIdx = (tithiNum-1)%15;
+  const tithiPct = ((elong%12)/12*100);
+
+  // Nakshatra & Yoga: real sidereal (Lahiri) longitudes
+  const ayan = lahiriAyanamsa(sunrise);
+  const sunLon = normDeg(Astronomy.SunPosition(sunrise).elon - ayan);
+  const moonLon = normDeg(Astronomy.EclipticGeoMoon(sunrise).lon - ayan);
+  const seg = 360/27;
+  const nakIdx = Math.floor(moonLon/seg)%27;
+  const nakPct = ((moonLon%seg)/seg*100);
+  const yogaIdx = Math.floor(normDeg(sunLon+moonLon)/seg)%27;
+
+  // Rahu Kaal: real, from actual sunrise-to-sunset day length (not a fixed clock time)
+  const segMs = (sunset.getTime()-sunrise.getTime())/8;
+  const rSeg = RAHU_SEGMENT[localDow];
+  const rahuStart = new Date(sunrise.getTime()+(rSeg-1)*segMs);
+  const rahuEnd = new Date(sunrise.getTime()+rSeg*segMs);
+
+  // Brahma Muhurat: 96–48 min before sunrise (traditional definition)
+  const brahmaStart = new Date(sunrise.getTime()-96*60000);
+  const brahmaEnd = new Date(sunrise.getTime()-48*60000);
+
+  // Abhijit Muhurat: local solar noon ± 24 min (traditionally the most auspicious daytime muhurat)
+  const solarNoon = new Date((sunrise.getTime()+sunset.getTime())/2);
+  const abhijitStart = new Date(solarNoon.getTime()-24*60000);
+  const abhijitEnd = new Date(solarNoon.getTime()+24*60000);
+
+  return {
+    tithi: TITHIS[tithiIdx], paksha, tithiPct,
+    nakshatra: NAKSHATRAS[nakIdx], nakPct,
+    yoga: YOGAS[yogaIdx], vaar: VAARS[localDow], dow: localDow,
+    sunrise, sunset, rahuStart, rahuEnd, brahmaStart, brahmaEnd, abhijitStart, abhijitEnd
+  };
+}
+
+function panchangQuality(tithi, nakshatra, dow){
   const goodTithis=['Pratipada','Tritiya','Panchami','Saptami','Ekadashi','Dwadashi','Purnima/Amavasya'];
   const badTithis=['Chaturthi','Ashtami','Chaturdashi'];
   const goodNakshatras=['Rohini','Pushya','Hasta','Uttara Phalguni','Uttara Ashadha','Uttara Bhadrapada','Revati','Ashwini','Mrigashira','Shravana'];
@@ -1444,22 +1510,36 @@ function computePanchang(dateStr){
   if(badNakshatras.includes(nakshatra)) score-=2;
   if([1,3,4,5].includes(dow)) score+=1;
   if(dow===2) score-=1;
+  return score;
+}
+
+function fmtIST(d){
+  return d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Kolkata'});
+}
+
+function currentPanchangCity(){
+  const el = document.getElementById('muhuratCity');
+  return el ? el.value : 'Delhi';
+}
+
+function computePanchang(dateStr){
+  if(!dateStr || typeof Astronomy==='undefined') return;
+  const p = realPanchangFor(dateStr, currentPanchangCity());
+  const score = panchangQuality(p.tithi, p.nakshatra, p.dow);
 
   const quality = score>=3?{label:'Highly Auspicious ✦',icon:'🌟',class:'background:#f0fff4;border:1px solid #b8dfc9',desc:'Excellent day for yatra. Tithi, Nakshatra, and Vaar are aligned in your favour.'}:
     score>=1?{label:'Auspicious',icon:'🙏',class:'background:#fff8ee;border:1px solid var(--line)',desc:'Good day for travel. Muhurat is favourable; avoid Rahu Kaal window.'}:
     score>=-1?{label:'Neutral',icon:'🕊️',class:'background:var(--cream);border:1px solid var(--line)',desc:'Moderate day. Travel is permissible; observe Rahu Kaal and begin journey carefully.'}:
     {label:'Less Favourable',icon:'⚠️',class:'background:#fff3f0;border:1px solid #f5c6c0',desc:'Not ideal for beginning a yatra. Consider an alternate date if possible.'};
 
-  // Show panchang
   document.getElementById('panchangGrid').style.display='grid';
   document.getElementById('panchangGrid').innerHTML=`
-    <div class="panch-item"><div class="panch-lbl">Tithi</div><div class="panch-val">${tithi}</div><div class="panch-sub">${seed%2?'Shukla Paksha':'Krishna Paksha'}</div></div>
-    <div class="panch-item"><div class="panch-lbl">Nakshatra</div><div class="panch-val">${nakshatra}</div><div class="panch-sub">${(seed%30+60).toFixed(0)}% elapsed</div></div>
-    <div class="panch-item"><div class="panch-lbl">Vaar (Day)</div><div class="panch-val">${vaar}</div><div class="panch-sub">${['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn'][dow]} day</div></div>
-    <div class="panch-item"><div class="panch-lbl">Yoga</div><div class="panch-val">${yoga}</div><div class="panch-sub">Lunar-solar combination</div></div>
+    <div class="panch-item"><div class="panch-lbl">Tithi</div><div class="panch-val">${p.tithi}</div><div class="panch-sub">${p.paksha} · ${p.tithiPct.toFixed(0)}% elapsed</div></div>
+    <div class="panch-item"><div class="panch-lbl">Nakshatra</div><div class="panch-val">${p.nakshatra}</div><div class="panch-sub">${p.nakPct.toFixed(0)}% elapsed</div></div>
+    <div class="panch-item"><div class="panch-lbl">Vaar (Day)</div><div class="panch-val">${p.vaar}</div><div class="panch-sub">${['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn'][p.dow]} day</div></div>
+    <div class="panch-item"><div class="panch-lbl">Yoga</div><div class="panch-val">${p.yoga}</div><div class="panch-sub">Lunar-solar combination</div></div>
   `;
 
-  // Quality
   document.getElementById('qualityCard').style.display='block';
   document.getElementById('qualityCard').innerHTML=`
     <div class="m-stitle">Muhurat Quality</div>
@@ -1469,19 +1549,17 @@ function computePanchang(dateStr){
     </div>
   `;
 
-  // Timings
-  const rahu = RAHU_KAAL[dow];
-  const good = PUJA_TIME[dow];
   document.getElementById('timingsCard').style.display='block';
   document.getElementById('timingsCard').innerHTML=`
     <div class="m-stitle" style="margin-bottom:8px">Avoid — Rahu Kaal</div>
-    <div class="rahu-grid"><div class="rahu-badge"><strong>Rahu Kaal</strong>${rahu[0]} – ${rahu[1]}</div></div>
+    <div class="rahu-grid"><div class="rahu-badge"><strong>Rahu Kaal</strong>${fmtIST(p.rahuStart)} – ${fmtIST(p.rahuEnd)}</div></div>
     <div class="m-stitle" style="margin-top:20px;margin-bottom:8px">Recommended Travel Windows</div>
     <div class="good-grid">
-      <div class="good-badge"><strong>Morning Muhurat</strong>${good[0]}</div>
-      <div class="good-badge"><strong>Afternoon Muhurat</strong>${good[1]}</div>
-      <div class="good-badge"><strong>Brahma Muhurat</strong>4:24 AM – 5:12 AM</div>
+      <div class="good-badge"><strong>Abhijit Muhurat</strong>${fmtIST(p.abhijitStart)} – ${fmtIST(p.abhijitEnd)}</div>
+      <div class="good-badge"><strong>Brahma Muhurat</strong>${fmtIST(p.brahmaStart)} – ${fmtIST(p.brahmaEnd)}</div>
+      <div class="good-badge"><strong>Sunrise / Sunset</strong>${fmtIST(p.sunrise)} – ${fmtIST(p.sunset)}</div>
     </div>
+    <div class="m-stitle" style="margin-top:16px;font-weight:400;color:var(--ink-muted);font-size:12.5px">Times shown for ${currentPanchangCity()} (Asia/Kolkata). Panchang uses Lahiri ayanamsa — real astronomical positions, not a live priest verification. Cross-check with a local pandit for major rituals.</div>
   `;
 }
 
@@ -1502,18 +1580,17 @@ function renderMiniCal(){
   const days=['Su','Mo','Tu','We','Th','Fr','Sa'];
   let html = days.map(d=>`<div class="cal-hdr">${d}</div>`).join('');
   for(let i=0;i<firstDay;i++) html+=`<div class="cal-day empty"></div>`;
+  const city = currentPanchangCity();
   for(let d=1;d<=daysInMonth;d++){
-    const seed = y*10000+(m+1)*100+d;
-    const dow = new Date(y,m,d).getDay();
-    const goodTithiIdx = seed%15;
-    const goodNakIdx = seed%27;
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     let cls='cal-day';
     if(d===today) cls+=' today';
-    const isGood = [0,2,4,6,10,11,14].includes(goodTithiIdx) && [3,7,12,14,20,21,26].includes(goodNakIdx%27) && [1,3,4,5].includes(dow);
-    const isBad = [3,7,13].includes(goodTithiIdx) && [5,8,17,18].includes(goodNakIdx%27);
-    if(isGood && !isBad) cls+=' good';
-    else if(isBad && !isGood) cls+=' bad';
-    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(typeof Astronomy!=='undefined'){
+      const p = realPanchangFor(ds, city);
+      const score = panchangQuality(p.tithi, p.nakshatra, p.dow);
+      if(score>=1) cls+=' good';
+      else if(score<=-2) cls+=' bad';
+    }
     html+=`<div class="${cls}" onclick="selectCalDay('${ds}',this)">${d}</div>`;
   }
   cal.innerHTML=html;
@@ -1672,7 +1749,7 @@ const TRANSPORT = {
 const ACCOMMODATION = {
   1:{rec:{name:'GMVN Tourist Rest House (Base Camp, Gaurikund)',price:'₹500–1,500/night',note:'Managed by Garhwal Mandal Vikas Nigam. Clean, basic, close to the trek start point.',book:'gmvnl.com',warn:'Book months ahead for May-June peak season'},alt:{name:'Kedarnath base camp guesthouses',price:'₹1,500–3,000/night',note:'Private lodges near Gaurikund. Book via Yatra.com or phone'}},
   2:{rec:{name:'GMVN Tourist Bungalow, Badrinath',price:'₹600–2,000/night',note:'Right in Badrinath town, walking distance from temple. Reliable quality.',book:'gmvnl.com',warn:'Open only May–Nov; sell out fast in June and September'},alt:{name:'Private dharamshalas & hotels in Badrinath',price:'₹800–2,500/night',note:'Multiple options within 500m of temple'}},
-  3:{rec:{name:'Shrine Board Accommodation (Bhavan / Sanjichhat)',price:'₹800–2,500/night',note:'Managed by the Vaishno Devi Shrine Board. Inside the pilgrimage zone. Pilgrims prefer staying here.',book:'maavaishnodevi.com',warn:'Book 3–4 weeks ahead. Fills up fast on weekends and Navratri'},alt:{name:'Hotels in Katra town (base camp)',price:'₹1,200–3,500/night',note:'More comfort options — Hotel Siddharth, Sarovar Portico. Good for families with elderly.'}},
+  3:{rec:{name:'Shrine Board Accommodation (Bhavan / Sanjichhat)',price:'₹800–2,500/night',note:'Managed by the Vaishno Devi Shrine Board. Inside the pilgrimage zone. Pilgrims prefer staying here.',book:'maavaishnodevi.org',warn:'Book 3–4 weeks ahead. Fills up fast on weekends and Navratri'},alt:{name:'Hotels in Katra town (base camp)',price:'₹1,200–3,500/night',note:'More comfort options — Hotel Siddharth, Sarovar Portico. Good for families with elderly.'}},
   4:{rec:{name:'Dharamshalas on the Ghats (Dashashwamedh area)',price:'₹300–1,000/night',note:'Stay right by the river. Many temple trusts offer free or subsidised accommodation for pilgrims.',book:'Walk-in or call ahead',warn:'Basic facilities. For elderly or families, prefer a hotel nearby'},alt:{name:'Hotels near Dashashwamedh Ghat',price:'₹1,500–4,500/night',note:'Hotel Alka, Ganpati Guest House, Ramada Varanasi'}},
   5:{rec:{name:'TTD Accommodation (Tirumala Trust Cottages)',price:'₹500–2,500/night',note:'Run by Tirumala Tirupati Devasthanams. Closest to the temple. Very high demand.',book:'tirupatibalaji.ap.gov.in',warn:'Book 6–8 weeks in advance. Fills in hours of opening'},alt:{name:'Hotels in Tirupati town (18km from Tirumala)',price:'₹800–3,500/night',note:'Fortune Select, Minerva Grand, Sri Aishwarya. AC hotel bus to Tirumala runs 24/7.'}},
   6:{rec:{name:'Somnath Temple Trust Dharamshala',price:'₹400–1,200/night',note:'Budget accommodation run by the Somnath Trust. Walking distance from temple.',book:'somnath.org',warn:'Simple but clean; advance booking recommended during Shivratri'},alt:{name:'Hotels near Somnath',price:'₹1,200–3,500/night',note:'Lords Inn Somnath, Utsav Beach Resort'}},
@@ -1690,27 +1767,29 @@ const ACCOMMODATION = {
 // Booking checklists per temple
 const CHECKLIST = {
   1:[
-    {urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand (Mandatory)',desc:'Every pilgrim must register and carry a QR-coded e-pass. Non-compliance = denied entry.',link:'touristcareuttarakhand.uk.gov.in'},
-    {urgency:'urgent',icon:'🚁',when:'8–10 weeks before',title:'Book Helicopter (if needed)',desc:'Only ~100 seats per flight per day. Sells out weeks ahead. Phata → Kedarnath and back = ₹4,000–8,000.',link:'heliservices.uk.gov.in'},
+    {urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand (Mandatory)',desc:'Every pilgrim must register and carry a QR-coded e-pass. Non-compliance = denied entry.',link:'registrationandtouristcare.uk.gov.in'},
+    {urgency:'urgent',icon:'🚁',when:'8–10 weeks before',title:'Book Helicopter (if needed)',desc:'Only ~100 seats per flight per day. Sells out weeks ahead. Phata → Kedarnath and back = ₹4,000–8,000.',link:'heliyatra.irctc.co.in'},
     {urgency:'soon',icon:'🏨',when:'6–8 weeks before',title:'Book GMVN accommodation',desc:'Book base camp accommodation at Gaurikund or Sonprayag early.',link:'gmvnl.com'},
-    {urgency:'prep',icon:'🏥',when:'2 weeks before',title:'Get a medical fitness certificate',desc:'Required for high-altitude zones. Any MBBS doctor can issue it. Carry the original.'},
+    {urgency:'urgent',icon:'🏥',when:'2 weeks before',title:'Get a Compulsory Health Certificate',desc:'Now mandatory under the Char Dham Yatra advisory, not just recommended — any MBBS doctor can issue it. Carry the original; you may be turned back without it.'},
     {urgency:'prep',icon:'📦',when:'1 week before',title:'Pack for altitude (3,583m)',desc:'Thermal wear, rain poncho, trekking shoes, altitude sickness tablets (Diamox), energy bars.'},
+    {urgency:'prep',icon:'⚠️',when:'Plan for it now',title:'Build in a 24–48hr acclimatization stop',desc:'Do not go straight from arrival to the trek. Most altitude-related medical emergencies happen when pilgrims skip acclimatization to save a day.'},
   ],
   2:[
-    {urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand',desc:'Mandatory for all Char Dham visitors. Get QR-coded e-pass.',link:'touristcareuttarakhand.uk.gov.in'},
+    {urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand',desc:'Mandatory for all Char Dham visitors. Get QR-coded e-pass.',link:'registrationandtouristcare.uk.gov.in'},
     {urgency:'urgent',icon:'🏨',when:'6–8 weeks before',title:'Book GMVN accommodation in Badrinath',desc:'Limited rooms, fills up for May–June and Sep–Oct. Book via GMVN portal.',link:'gmvnl.com'},
-    {urgency:'soon',icon:'🚁',when:'4–6 weeks before',title:'Book helicopter from Phata/Sersi (optional)',desc:'For elderly or those avoiding the high-altitude drive section.',link:'heliservices.uk.gov.in'},
-    {urgency:'prep',icon:'🏥',when:'2 weeks before',title:'Medical certificate for high altitude',desc:'Badrinath is at 3,133m. Altitude sickness is real. Carry Diamox prescribed by a doctor.'},
+    {urgency:'soon',icon:'🚁',when:'4–6 weeks before',title:'Book helicopter from Phata/Sersi (optional)',desc:'For elderly or those avoiding the high-altitude drive section.',link:'heliyatra.irctc.co.in'},
+    {urgency:'urgent',icon:'🏥',when:'2 weeks before',title:'Get a Compulsory Health Certificate',desc:'Badrinath is at 3,133m — a health certificate is now mandatory under the Char Dham Yatra advisory, not optional. Carry Diamox prescribed by a doctor.'},
+    {urgency:'prep',icon:'⚠️',when:'Plan for it now',title:'Build in a 24–48hr acclimatization stop',desc:'Rest before ascending further. Most altitude-related medical emergencies happen when pilgrims skip acclimatization to save a day.'},
   ],
   3:[
-    {urgency:'urgent',icon:'📋',when:'Do this NOW (Free, Mandatory)',title:'Get your Yatra Parchi',desc:'Without a Yatra Parchi, you cannot begin the trek. Get it online or at Katra registration counters.',link:'maavaishnodevi.com'},
-    {urgency:'urgent',icon:'🚁',when:'3–4 weeks before',title:'Book helicopter (₹1,430 return)',desc:'Katra → Sanjichhat helicopter. Limited slots, sells out on weekends. Book the moment you have dates.',link:'maavaishnodevi.com'},
-    {urgency:'soon',icon:'🏨',when:'2–3 weeks before',title:'Book Shrine Board accommodation',desc:'Best to stay in the pilgrimage zone. Fills fast on weekends and festival dates.',link:'maavaishnodevi.com'},
+    {urgency:'urgent',icon:'📋',when:'Do this NOW (Free, Mandatory)',title:'Get your Yatra Parchi',desc:'Without a Yatra Parchi, you cannot begin the trek. Get it online or at Katra registration counters.',link:'maavaishnodevi.org'},
+    {urgency:'urgent',icon:'🚁',when:'3–4 weeks before',title:'Book helicopter (₹1,430 return)',desc:'Katra → Sanjichhat helicopter. Limited slots, sells out on weekends. Book the moment you have dates.',link:'maavaishnodevi.org'},
+    {urgency:'soon',icon:'🏨',when:'2–3 weeks before',title:'Book Shrine Board accommodation',desc:'Best to stay in the pilgrimage zone. Fills fast on weekends and festival dates.',link:'maavaishnodevi.org'},
     {urgency:'prep',icon:'🎒',when:'Day before',title:'Leave big bags at Katra storage',desc:'Only one small bag allowed on the trek. Katra has cloakrooms (₹30–50/bag/day).'},
     {urgency:'prep',icon:'📸',when:'At the entrance',title:'No cameras or non-essential electronics',desc:'Cameras, selfie sticks, and large phones are not allowed on the cave trek.'},
   ],
   4:[
-    {urgency:'soon',icon:'🎫',when:'2–3 weeks before',title:'Book Special Darshan slot online',desc:'Avoid the 3–4 hr general queue. Online slot darshan is ₹300 and takes 30–60 mins.',link:'shrikashivishwanath.in'},
+    {urgency:'soon',icon:'🎫',when:'2–3 weeks before',title:'Book Special Darshan slot online',desc:'Avoid the 3–4 hr general queue. Online slot darshan is ₹300 and takes 30–60 mins.',link:'shrikashivishwanath.org'},
     {urgency:'prep',icon:'👔',when:'Day before',title:'Prepare traditional attire',desc:'Dhoti preferred for men inside the sanctum. Women: saree or salwar. No jeans, no shorts.'},
     {urgency:'prep',icon:'🛶',when:'At the ghat',title:'Book Ganga Aarti seats (Dashashwamedh)',desc:'Evening Ganga Aarti at 7 PM is unmissable. Arrive by 6:15 PM for a good view.'},
     {urgency:'prep',icon:'🧳',when:'Pack for Varanasi',title:'Leave valuables in hotel safe',desc:'Vishwanath Gali is crowded. Carry minimal items into the temple.'},
@@ -1727,7 +1806,7 @@ const CHECKLIST = {
   8:[{urgency:'urgent',icon:'🛁',when:'First morning',title:'Complete the 22 Theertham ritual bath (₹250)',desc:'This is the central ritual at Rameshwaram. You are poured 22 holy waters over your head. Bring a change of clothes.'},{urgency:'soon',icon:'🎫',when:'Early morning',title:'Arrive early for less crowded darshan',desc:'Rameshwaram sees 30,000+ pilgrims daily. Temple opens at 5 AM — arrive by 5:30 AM.'},{urgency:'prep',icon:'👔',when:'Men entering main sanctum',title:'Men must remove shirts for darshan',desc:'This is a traditional requirement at Rameshwaram. Wet towel is provided. Women in modest wear.'}],
   9:[{urgency:'soon',icon:'🎫',when:'Online booking',title:'No advance booking needed for most temples',desc:'Walk-in darshan for Banke Bihari, Krishna Janmabhoomi. Arrive early (before 8 AM) for shorter queues.'},{urgency:'prep',icon:'🌸',when:'If visiting on Holi / Janmashtami',title:'Crowd warning: arrive a day early',desc:'Holi in Mathura-Vrindavan lasts 40 days. Janmashtami sees millions. Plan accordingly.'},{urgency:'prep',icon:'💧',when:'Daily',title:'Yamuna Aarti at evening',desc:'Attend the evening Yamuna Aarti at 6:30 PM — deeply moving, free, unmissable.'}],
   10:[{urgency:'soon',icon:'🎫',when:'Darshan',title:'Walk-in darshan available',desc:'No advance booking needed. Morning darshan (6:30 AM – 1 PM) has shorter queues than evening.'},{urgency:'prep',icon:'📸',when:'Inside temple',title:'Photography not allowed inside',desc:'Cameras and phones must be left outside. Locker facilities available.'},{urgency:'prep',icon:'🚢',when:'Optional',title:'Take a ferry to Bet Dwarka island',desc:'Lord Krishna\'s palace is on Bet Dwarka island. Short ferry ride (₹30–50 return).'}],
-  11:[{urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand',desc:'Both Gangotri and Yamunotri require registration.',link:'touristcareuttarakhand.uk.gov.in'},{urgency:'soon',icon:'🏨',when:'4–6 weeks before',title:'Book GMVN accommodation',desc:'Very limited rooms at both shrines. Book early.',link:'gmvnl.com'},{urgency:'prep',icon:'🌡️',when:'Pack for cold',title:'Warm clothing essential',desc:'Gangotri: 3,048m. Temperature drops sharply at night. Pack thermals and rain gear.'}],
+  11:[{urgency:'urgent',icon:'📋',when:'Do this NOW',title:'Register on Tourist Care Uttarakhand',desc:'Both Gangotri and Yamunotri require registration.',link:'registrationandtouristcare.uk.gov.in'},{urgency:'urgent',icon:'🏥',when:'2 weeks before',title:'Get a Compulsory Health Certificate',desc:'Gangotri sits at 3,048m — a health certificate is now mandatory under the Char Dham Yatra advisory. Any MBBS doctor can issue it.'},{urgency:'soon',icon:'🏨',when:'4–6 weeks before',title:'Book GMVN accommodation',desc:'Very limited rooms at both shrines. Book early.',link:'gmvnl.com'},{urgency:'prep',icon:'🌡️',when:'Pack for cold',title:'Warm clothing essential',desc:'Gangotri: 3,048m. Temperature drops sharply at night. Pack thermals and rain gear.'}],
   12:[{urgency:'soon',icon:'🎫',when:'Arrive early',title:'Early morning darshan recommended',desc:'Sanctum is accessible only in dhoti (provided). Best to arrive by 5:30 AM for abhishek timing.'},{urgency:'urgent',icon:'🙏',when:'Major puja',title:'Book Kalasarpa Dosh Puja in advance',desc:'This is Trimbakeshwar\'s signature puja. Takes 2–3 hrs and must be booked with a local Guruji. Cost: ₹2,000–5,000.'},{urgency:'prep',icon:'🚖',when:'Travel from Nashik',title:'Hire cab in Nashik',desc:'Trimbakeshwar is 28km from Nashik. Shared autos and cabs available from CBS bus stand.'}],
   13:[{urgency:'prep',icon:'🗓️',when:'Avoid June (unless for Ambubachi)',title:'Temple closes for 3 days during Ambubachi Mela',desc:'The Ambubachi closure (June) is sacred. If you want to attend the mela, book 3–6 months ahead. If not, avoid June.'},{urgency:'soon',icon:'🎫',when:'Darshan',title:'Walk-in darshan available (no advance booking)',desc:'Queue can be long on weekends. Arrive before 8 AM.'},{urgency:'prep',icon:'🌺',when:'Carry offerings',title:'Red offerings (sindoor, red flowers) are especially sacred here',desc:'The prasad includes red sindoor-stained cloth. Very auspicious.'}],
   14:[{urgency:'soon',icon:'🚣',when:'On arrival',title:'Take a boat for Omkareshwar Parikrama',desc:'Circumambulating the Om-shaped island by boat is the central ritual. ₹50–100 per person. Takes 30–45 mins.'},{urgency:'soon',icon:'🎫',when:'Darshan',title:'Walk-in darshan; early morning is best',desc:'Temple opens at 5 AM. Rudrabhishek slot at 5:30 AM is most sought-after.'},{urgency:'prep',icon:'🌊',when:'Sacred bath',title:'Take a ritual bath at Narmada Ghat',desc:'Bathing in the Narmada before darshan is traditional. The ghat is right below the temple.'}],
@@ -1931,6 +2010,18 @@ function generateItinerary(){
   ]});
   cur.setDate(cur.getDate()+1); dayNum++;
 
+  // Mandatory acclimatization stop for high-altitude Char Dham routes — per the 2026 Char Dham Yatra advisory
+  // (health certificate + acclimatization now compulsory, not optional, after the high altitude-cardiac fatalities in 2025)
+  if(selectedDests[0].tags.includes('High Altitude') && dayNum<=totalDays){
+    days.push({num:dayNum,date:new Date(cur),title:'⚠️ Acclimatization Day (Mandatory Rest)',sub:`Your body needs time to adjust before ascending further at ${selectedDests[0].location}`,slots:[
+      {time:'Morning',t:'Medical check-in & Health Certificate verification',d:'Present your Compulsory Health Certificate at the registration counter — mandatory under the current Char Dham Yatra advisory. Entry without one can be denied.'},
+      {time:'All day',t:'Rest at base camp — do not trek or ascend yet',d:'A minimum 24–48 hour acclimatization stop is now advised before going further. Mild headache or breathlessness at this altitude is common and should ease with rest; if it worsens, or breathing becomes difficult, descend and seek medical help immediately — do not push through it.'},
+      {time:'Throughout the day',t:'Hydrate, eat light, avoid exertion',d:'Drink plenty of water, keep meals light and sattvic, and skip alcohol. This one rest day is the single biggest thing you can do to reduce altitude-sickness risk.'},
+      {time:'On the trail tomorrow',t:'Stay on the marked route — never take shortcuts',d:'Pilgrims have been seriously injured cutting across gorges or unmarked paths to save time. The marked route is longer but built for safety — stay on it, especially in poor visibility or rain.'},
+    ]});
+    cur.setDate(cur.getDate()+1); dayNum++;
+  }
+
   selectedDests.forEach((dest,i)=>{
     if(dayNum>totalDays) return;
     days.push({num:dayNum,date:new Date(cur),title:`${dest.emoji} Darshan — ${dest.name}`,sub:`${dest.location} · ${dest.deity}`,slots:[
@@ -1999,6 +2090,12 @@ function generateItinerary(){
   const stepDayByDay = String(++__step).padStart(2,'0');
   const stepPacking = String(++__step).padStart(2,'0');
   const crowd = CROWD_INFO[t.id];
+  const OFFICIAL_PORTAL = {
+    1:'https://registrationandtouristcare.uk.gov.in/', 2:'https://registrationandtouristcare.uk.gov.in/',
+    11:'https://registrationandtouristcare.uk.gov.in/', 3:'https://maavaishnodevi.org/',
+    4:'https://shrikashivishwanath.org/', 5:'https://ttdsevaonline.com/', 15:'https://sai.org.in/'
+  };
+  const officialPortal = OFFICIAL_PORTAL[t.id];
   const exp = EXPERIENCES[t.id];
 
   let totalTransport = fromCity==='Delhi'&&t.id===3?'₹2,560–2,680 return':fromCity==='Delhi'&&t.id===5?'₹8,000–17,000 return':fromCity==='Mumbai'&&t.id===15?'₹700–1,200 return':fromCity==='Bangalore'&&t.id===5?'₹800–1,600 return':'Varies by route';
@@ -2115,6 +2212,7 @@ function generateItinerary(){
         <div class="po-tip"><strong>Typical wait</strong> — ${crowd.wait}. These are typical ranges from public reporting, not a live feed — always check the temple's official site closer to your date.</div>
         <div class="po-tip"><strong>Shortest queue</strong> — ${crowd.bestSlot}</div>
       </div>
+      ${officialPortal?`<a href="${officialPortal}" target="_blank" rel="noopener noreferrer" class="maps-link" style="margin-top:4px">🔗 Check live status on the official portal</a>`:''}
     </div>
   </div>`:''}
 
@@ -2153,7 +2251,7 @@ function generateItinerary(){
     </div>
     <div class="po-body">
       <div class="po-tips">
-        ${t.tags.includes('High Altitude')?`<div class="po-tip"><strong>Altitude</strong> — Acclimatise for a day before the main trek. Symptoms like mild headache are normal; descend immediately if breathing worsens.</div>`:`<div class="po-tip"><strong>Dress code</strong> — Traditional Indian wear required. No shorts or sleeveless inside the sanctum. Carry a dupatta or dhoti.</div>`}
+        ${t.tags.includes('High Altitude')?`<div class="po-tip"><strong>Altitude safety</strong> — A Compulsory Health Certificate and a 24–48hr acclimatization stop are now mandatory, not optional, on this route. Mild headache is normal; if breathing worsens, descend immediately and seek medical help. Never take shortcuts off the marked trail — most serious accidents happen there, not on the main path.</div>`:`<div class="po-tip"><strong>Dress code</strong> — Traditional Indian wear required. No shorts or sleeveless inside the sanctum. Carry a dupatta or dhoti.</div>`}
         <div class="po-tip"><strong>Footwear</strong> — Remove shoes at the temple entrance. Bring a cloth bag to carry them. Socks are welcome.</div>
         <div class="po-tip"><strong>Photography</strong> — Not permitted inside the main shrine at most temples. Ask before pointing your phone at the deity.</div>
         <div class="po-tip"><strong>Prasad</strong> — Accept with your right hand. Don't waste it — it's sanctified food, share any extra with others.</div>
